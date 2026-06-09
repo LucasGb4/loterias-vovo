@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loterias da Vovó</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: auto;
+            padding: 20px;
+            text-align: center;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+        h1 {
+            color: #4a148c;
+            font-size: 28px;
+            margin-bottom: 20px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .btn-container {
+            position: relative;
+            width: 100%;
+        }
+        .btn {
+            width: 100%;
+            padding: 18px 10px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            color: white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-transform: uppercase;
+            box-sizing: border-box;
+        }
+        .card {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 12px;
+            background: white;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            display: none;
+        }
+        .nav-concurso {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            gap: 10px;
+        }
+        .btn-nav {
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            text-transform: uppercase;
+        }
+        .btn-nav:disabled {
+            background-color: #000000 !important;
+            color: #888888 !important;
+            cursor: not-allowed !important;
+            box-shadow: none !important;
+        }
+        .nav-concurso h2 {
+            margin: 0;
+            font-size: 22px;
+            color: #333;
+        }
+        .badge-hoje-resultado {
+            background-color: #ffea00;
+            color: #000;
+            font-size: 14px;
+            font-weight: bold;
+            padding: 6px 12px;
+            border-radius: 8px;
+            display: inline-block;
+            margin: 5px 0 15px 0;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        }
+        .balls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin: 15px 0;
+            min-height: 50px;
+        }
+        .ball {
+            color: white;
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 18px;
+            box-shadow: inset 0 -3px 5px rgba(0,0,0,0.2);
+            animation: aparecerBola 0.4s ease-out forwards;
+        }
+        @keyframes aparecerBola {
+            from { transform: scale(0); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+        #gemini-mensagem {
+            margin-top: 20px;
+            text-align: left;
+            font-size: 18px;
+            line-height: 1.6;
+            background: #e1f5fe;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 5px solid #0288d1;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Loterias da Vovó 👵✨</h1>
+
+    <div class="grid" id="botoes-container"></div>
+
+    <div id="resultado-card" class="card">
+        <div class="nav-concurso">
+            <button class="btn-nav" id="btn-anterior" onclick="navegarConcurso(-1)">◀ Anterior</button>
+            <h2 id="concurso-titulo"></h2>
+            <button class="btn-nav" id="btn-proximo" onclick="navegarConcurso(1)">Próximo ▶</button>
+        </div>
+        <p id="concurso-data"></p>
+        <div id="badge-hoje-container"></div>
+        <div id="dezenas-container" class="balls"></div>
+        <div id="gemini-mensagem"></div>
+    </div>
+
+    <script>
+        const GROQ_KEY = 'gsk' + '_ozHgklhlXZNXDXatbNI8WGdyb3FY8WGchTw91jdLZY1wK5wjgDqK';
+        const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+
+        let loteriaAtualId = '';
+        let loteriaAtualNome = '';
+        let concursoAtualNumero = null;
+        let idBuscaGlobal = 0;
+        const maxConcursos = {};
+
+        const loterias = [
+            { id: 'megasena', nome: 'Mega-Sena', cor: '#209869' },
+            { id: 'lotofacil', nome: 'Lotofácil', cor: '#930089' },
+            { id: 'quina', nome: 'Quina', cor: '#260085' },
+            { id: 'lotomania', nome: 'Lotomania', cor: '#f78100' },
+            { id: 'timemania', nome: 'Timemania', cor: '#00ff00', corTexto: '#000' },
+            { id: 'duplasena', nome: 'Dupla Sena', cor: '#a61324' },
+            { id: 'diadesorte', nome: 'Dia de Sorte', cor: '#cb852b' },
+            { id: 'supersete', nome: 'Super Sete', cor: '#a8cf45', corTexto: '#000' },
+            { id: 'maismilionaria', nome: '+Milionária', cor: '#000000' }
+        ];
+
+        const botoesContainer = document.getElementById('botoes-container');
+
+        loterias.forEach(loteria => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'btn-container';
+
+            const btn = document.createElement('button');
+            btn.className = 'btn';
+            btn.style.backgroundColor = loteria.cor;
+            if(loteria.corTexto) btn.style.color = loteria.corTexto;
+            btn.innerText = loteria.nome;
+
+            btn.onclick = () => iniciarBusca(loteria.id, loteria.nome);
+            wrapper.appendChild(btn);
+            botoesContainer.appendChild(wrapper);
+        });
+
+        function iniciarBusca(idLoteria, nomeLoteria) {
+            loteriaAtualId = idLoteria;
+            loteriaAtualNome = nomeLoteria;
+            concursoAtualNumero = null;
+            buscarEVerificar();
+        }
+
+        async function navegarConcurso(direcao) {
+            if (concursoAtualNumero !== null) {
+                concursoAtualNumero += direcao;
+                buscarEVerificar();
+            }
+        }
+
+        async function buscarEVerificar() {
+            idBuscaGlobal++;
+            const idBuscaLocal = idBuscaGlobal;
+
+            const card = document.getElementById("resultado-card");
+            const titulo = document.getElementById("concurso-titulo");
+            const data = document.getElementById("concurso-data");
+            const container = document.getElementById("dezenas-container");
+            const geminiMsg = document.getElementById("gemini-mensagem");
+            const btnProximo = document.getElementById("btn-proximo");
+            const btnAnterior = document.getElementById("btn-anterior");
+            const badgeContainer = document.getElementById("badge-hoje-container");
+
+            const loteriaInfo = loterias.find(l => l.id === loteriaAtualId);
+            const corDoJogo = loteriaInfo ? loteriaInfo.cor : '#4a148c';
+            const corTextoDoJogo = loteriaInfo && loteriaInfo.corTexto ? loteriaInfo.corTexto : 'white';
+
+            btnAnterior.disabled = false;
+            btnProximo.disabled = false;
+            btnAnterior.style.backgroundColor = corDoJogo;
+            btnAnterior.style.color = corTextoDoJogo;
+            btnProximo.style.backgroundColor = corDoJogo;
+            btnProximo.style.color = corTextoDoJogo;
+
+            card.style.display = "block";
+            titulo.innerText = "Buscando...";
+            data.innerText = "";
+            container.innerHTML = "";
+            badgeContainer.innerHTML = "";
+            geminiMsg.style.display = "block";
+            geminiMsg.innerText = "Aguarde, a inteligência artificial está analisando os dados do sorteio...";
+
+            try {
+                if (!maxConcursos[loteriaAtualId]) {
+                    try {
+                        const rMax = await fetch(`https://servicebus2.caixa.gov.br/portaldeloterias/api/${loteriaAtualId}`);
+                        const dMax = await rMax.json();
+                        if (dMax && dMax.numero) {
+                            maxConcursos[loteriaAtualId] = parseInt(dMax.numero);
+                        }
+                    } catch (e) {}
+                }
+
+                let url = `https://servicebus2.caixa.gov.br/portaldeloterias/api/${loteriaAtualId}`;
+                
+                if (concursoAtualNumero !== null) {
+                    url += `/${concursoAtualNumero}`;
+                }
+
+                const r = await fetch(url);
+                const d = await r.json();
+
+                if (idBuscaLocal !== idBuscaGlobal) return;
+
+                if (!d.listaDezenas || d.listaDezenas.length === 0) {
+                    titulo.innerText = "Sorteio não encontrado";
+                    geminiMsg.innerText = "Não encontramos nenhum concurso com este número. Tente voltar para o resultado atual.";
+                    return;
+                }
+
+                concursoAtualNumero = parseInt(d.numero);
+                titulo.innerText = `Nº ${d.numero}`;
+                data.innerText = `${loteriaAtualNome} • Apuração: ${d.dataApuracao}`;
+
+                const maxNum = maxConcursos[loteriaAtualId];
+                if (maxNum && concursoAtualNumero >= maxNum) {
+                    btnProximo.disabled = true;
+                }
+                if (concursoAtualNumero <= 1) {
+                    btnAnterior.disabled = true;
+                }
+
+                const hoje = new Date();
+                const dia = String(hoje.getDate()).padStart(2, '0');
+                const mes = String(hoje.getMonth() + 1).padStart(2, '0');
+                const ano = hoje.getFullYear();
+                const dataHojeStr = `${dia}/${mes}/${ano}`;
+
+                if (d.dataApuracao === dataHojeStr) {
+                    const badge = document.createElement("span");
+                    badge.className = "badge-hoje-resultado";
+                    badge.innerText = "🎉 SORTEADO HOJE!";
+                    badgeContainer.appendChild(badge);
+                }
+
+                geminiMsg.innerText = "Sorteando as bolinhas na tela...";
+                const dezenas = d.listaDezenas || [];
+                for (let i = 0; i < dezenas.length; i++) {
+                    if (idBuscaLocal !== idBuscaGlobal) return;
+                    await new Promise(resolve => setTimeout(resolve, 600));
+                    if (idBuscaLocal !== idBuscaGlobal) return;
+                    
+                    const ball = document.createElement("div");
+                    ball.className = "ball";
+                    ball.style.backgroundColor = corDoJogo;
+                    ball.style.color = corTextoDoJogo;
+                    ball.innerText = dezenas[i];
+                    container.appendChild(ball);
+                }
+
+                if (idBuscaLocal !== idBuscaGlobal) return;
+                geminiMsg.innerText = "Aguarde, a inteligência artificial está gerando o resumo técnico do jogo...";
+
+                let ganhadoresDetalhes = "Acumulou! Ninguém acertou a faixa principal.";
+                if (d.listaMunicipioUFGanhadores && d.listaMunicipioUFGanhadores.length > 0) {
+                    ganhadoresDetalhes = d.listaMunicipioUFGanhadores.map(g => {
+                        const local = g.municipio ? `${g.municipio} (${g.uf})` : g.uf;
+                        return `${g.ganhadores || 1} aposta(s) em ${local}`;
+                    }).join(", ");
+                }
+
+                let resumoPremios = "Sem informações de faixas adicionais.";
+                if (d.premiacao && d.premiacao.length > 0) {
+                    resumoPremios = d.premiacao.map(p => `${p.descricao}: ${p.quantidadeGanhadores} ganhador(es)`).join(" | ");
+                }
+
+                const listaNumeros = dezenas.join(', ');
+                const prompt = `Aja como um analista de loterias direto, claro e informativo. Faça um review objetivo sobre o sorteio da ${loteriaAtualNome}, concurso número ${d.numero}, realizado em ${d.dataApuracao}.
+
+Use exatamente estes dados oficiais para montar o seu resumo:
+- Números que saíram: ${listaNumeros}
+- Ganhadores da faixa principal e de onde eles são: ${ganhadoresDetalhes}
+- Outros prêmios deste concurso: ${resumoPremios}
+
+Seu texto deve apresentar um review completo com a quantidade exata de ganhadores principais, a localização (cidade e estado) de onde saíram as apostas premiadas (ou deixar claro se acumulou), e os dados gerais das outras faixas de premiação. Evite mensagens excessivamente carinhosas, sentimentais ou melosas. No final da mensagem, limite-se a dar uma saudação breve e direta desejando boa sorte na conferência do bilhete.`;
+
+                try {
+                    const aiReq = await fetch(GROQ_URL, {
+                        method: "POST",
+                        headers: { 
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${GROQ_KEY}`
+                        },
+                        body: JSON.stringify({
+                            model: "llama-3.3-70b-versatile",
+                            messages: [{ role: "user", content: prompt }]
+                        })
+                    });
+                    
+                    const aiRes = await aiReq.json();
+
+                    if (idBuscaLocal !== idBuscaGlobal) return;
+
+                    if (aiRes.error) {
+                        geminiMsg.innerText = "Erro na IA: " + aiRes.error.message;
+                    } else if (aiRes.choices && aiRes.choices.length > 0) {
+                        geminiMsg.innerText = aiRes.choices[0].message.content;
+                    } else {
+                        geminiMsg.innerText = "A IA não conseguiu gerar uma resposta no momento.";
+                    }
+
+                } catch (aiErro) {
+                    if (idBuscaLocal !== idBuscaGlobal) return;
+                    geminiMsg.innerText = "Não foi possível conectar à inteligência artificial.";
+                }
+
+            } catch (caixaErro) {
+                if (idBuscaLocal !== idBuscaGlobal) return;
+                titulo.innerText = "Erro ao buscar";
+                geminiMsg.innerText = "Não foi possível encontrar dados para este concurso ou houve uma falha na conexão.";
+            }
+        }
+
+        const manifest = {
+            "name": "Loterias da Vovó",
+            "short_name": "Loterias Vovó",
+            "start_url": window.location.href,
+            "display": "standalone",
+            "background_color": "#f4f4f9",
+            "theme_color": "#4a148c",
+            "icons": [
+                {
+                    "src": "https://cdn-icons-png.flaticon.com/512/2829/2829763.png",
+                    "sizes": "512x512",
+                    "type": "image/png"
+                }
+            ]
+        };
+        const manifestStr = JSON.stringify(manifest);
+        const blobManifest = new Blob([manifestStr], {type: 'application/json'});
+        const manifestURL = URL.createObjectURL(blobManifest);
+        const link = document.createElement('link');
+        link.rel = 'manifest';
+        link.href = manifestURL;
+        document.head.appendChild(link);
+
+        if ('serviceWorker' in navigator) {
+            const swCode = `
+                self.addEventListener('install', (e) => {
+                    e.waitUntil(caches.open('vovo-loto-v17'));
+                });
+                self.addEventListener('fetch', (e) => {
+                    e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+                });
+            `;
+            const blobSW = new Blob([swCode], {type: 'application/javascript'});
+            const swURL = URL.createObjectURL(blobSW);
+            navigator.serviceWorker.register(swURL).catch(() => {});
+        }
+    </script>
+</body>
+</html>
